@@ -1,0 +1,5 @@
+/home/lkh/project/LiteDB/build/CMakeFiles/edit_cache.dir
+/home/lkh/project/LiteDB/build/CMakeFiles/rebuild_cache.dir
+/home/lkh/project/LiteDB/build/src/CMakeFiles/LiteDB.dir
+/home/lkh/project/LiteDB/build/src/CMakeFiles/edit_cache.dir
+/home/lkh/project/LiteDB/build/src/CMakeFiles/rebuild_cache.dir

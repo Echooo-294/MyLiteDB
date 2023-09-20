@@ -1,0 +1,42 @@
+[
+{
+  "directory": "/home/lkh/project/LiteDB/build/src",
+  "command": "g++  -I/home/lkh/project/LiteDB/src/parser/include -I/home/lkh/project/LiteDB/src -g -Wall -Werror -std=c++11 -O0 -std=gnu++11 -o CMakeFiles/LiteDB.dir/main.cpp.o -c /home/lkh/project/LiteDB/src/main.cpp",
+  "file": "/home/lkh/project/LiteDB/src/main.cpp"
+},
+{
+  "directory": "/home/lkh/project/LiteDB/build/src",
+  "command": "g++  -I/home/lkh/project/LiteDB/src/parser/include -I/home/lkh/project/LiteDB/src -g -Wall -Werror -std=c++11 -O0 -std=gnu++11 -o CMakeFiles/LiteDB.dir/executor/executor.cpp.o -c /home/lkh/project/LiteDB/src/executor/executor.cpp",
+  "file": "/home/lkh/project/LiteDB/src/executor/executor.cpp"
+},
+{
+  "directory": "/home/lkh/project/LiteDB/build/src",
+  "command": "g++  -I/home/lkh/project/LiteDB/src/parser/include -I/home/lkh/project/LiteDB/src -g -Wall -Werror -std=c++11 -O0 -std=gnu++11 -o CMakeFiles/LiteDB.dir/storage/metadata.cpp.o -c /home/lkh/project/LiteDB/src/storage/metadata.cpp",
+  "file": "/home/lkh/project/LiteDB/src/storage/metadata.cpp"
+},
+{
+  "directory": "/home/lkh/project/LiteDB/build/src",
+  "command": "g++  -I/home/lkh/project/LiteDB/src/parser/include -I/home/lkh/project/LiteDB/src -g -Wall -Werror -std=c++11 -O0 -std=gnu++11 -o CMakeFiles/LiteDB.dir/executor/optimizer.cpp.o -c /home/lkh/project/LiteDB/src/executor/optimizer.cpp",
+  "file": "/home/lkh/project/LiteDB/src/executor/optimizer.cpp"
+},
+{
+  "directory": "/home/lkh/project/LiteDB/build/src",
+  "command": "g++  -I/home/lkh/project/LiteDB/src/parser/include -I/home/lkh/project/LiteDB/src -g -Wall -Werror -std=c++11 -O0 -std=gnu++11 -o CMakeFiles/LiteDB.dir/parser/parser.cpp.o -c /home/lkh/project/LiteDB/src/parser/parser.cpp",
+  "file": "/home/lkh/project/LiteDB/src/parser/parser.cpp"
+},
+{
+  "directory": "/home/lkh/project/LiteDB/build/src",
+  "command": "g++  -I/home/lkh/project/LiteDB/src/parser/include -I/home/lkh/project/LiteDB/src -g -Wall -Werror -std=c++11 -O0 -std=gnu++11 -o CMakeFiles/LiteDB.dir/storage/storage.cpp.o -c /home/lkh/project/LiteDB/src/storage/storage.cpp",
+  "file": "/home/lkh/project/LiteDB/src/storage/storage.cpp"
+},
+{
+  "directory": "/home/lkh/project/LiteDB/build/src",
+  "command": "g++  -I/home/lkh/project/LiteDB/src/parser/include -I/home/lkh/project/LiteDB/src -g -Wall -Werror -std=c++11 -O0 -std=gnu++11 -o CMakeFiles/LiteDB.dir/trx.cpp.o -c /home/lkh/project/LiteDB/src/trx.cpp",
+  "file": "/home/lkh/project/LiteDB/src/trx.cpp"
+},
+{
+  "directory": "/home/lkh/project/LiteDB/build/src",
+  "command": "g++  -I/home/lkh/project/LiteDB/src/parser/include -I/home/lkh/project/LiteDB/src -g -Wall -Werror -std=c++11 -O0 -std=gnu++11 -o CMakeFiles/LiteDB.dir/util.cpp.o -c /home/lkh/project/LiteDB/src/util.cpp",
+  "file": "/home/lkh/project/LiteDB/src/util.cpp"
+}
+]

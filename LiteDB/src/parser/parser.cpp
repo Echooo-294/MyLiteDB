@@ -1,0 +1,423 @@
+#include "parser.h"
+
+#include <cstdint>
+#include <iostream>
+
+#include "storage/metadata.h"
+#include "util.h"
+
+using namespace hsql;
+
+namespace litedb {
+
+Parser::Parser() { result_ = nullptr; }
+
+Parser::~Parser() {
+  delete result_;
+  result_ = nullptr;
+}
+
+bool Parser::parseStatement(std::string query) {
+  result_ = new SQLParserResult;
+  SQLParser::parse(query, result_);
+
+  if (result_->isValid())
+    return checkStmtsMeta();
+  else
+    std::cout << "[LiteDB-Error]  Failed to parse sql statement.\r\n";
+
+  return true;
+}
+
+bool Parser::checkStmtsMeta() {
+  for (size_t i = 0; i < result_->size(); ++i) {
+    const SQLStatement* stmt = result_->getStatement(i);
+    if (checkMeta(stmt)) return true;
+  }
+
+  return false;
+}
+
+bool Parser::checkMeta(const SQLStatement* stmt) {
+  switch (stmt->type()) {
+    case kStmtSelect:
+      return checkSelectStmt(static_cast<const SelectStatement*>(stmt));
+    case kStmtInsert:
+      return checkInsertStmt(static_cast<const InsertStatement*>(stmt));
+    case kStmtUpdate:
+      return checkUpdateStmt(static_cast<const UpdateStatement*>(stmt));
+    case kStmtDelete:
+      return checkDeleteStmt(static_cast<const DeleteStatement*>(stmt));
+    case kStmtCreate:
+      return checkCreateStmt(static_cast<const CreateStatement*>(stmt));
+    case kStmtDrop:
+      return checkDropStmt(static_cast<const DropStatement*>(stmt));
+    case kStmtTransaction:
+    case kStmtShow:
+      return false;
+    default:
+      std::cout << "[LiteDB-Error]  Statement type "
+                << StmtTypeToString(stmt->type())
+                << " is not supported now.\r\n";
+  }
+
+  return true;
+}
+
+bool Parser::checkSelectStmt(const SelectStatement* stmt) {
+  TableRef* table_ref = stmt->fromTable;
+  Table* table = getTable(table_ref);
+  if (table == nullptr) {
+    std::cout << "[LiteDB-Error]  Can not find table "
+              << TableNameToString(table_ref->schema, table_ref->name)
+              << "\r\n";
+    return true;
+  }
+
+  if (stmt->groupBy != nullptr) {
+    std::cout << "[LiteDB-Error]  Do not support 'Group By' clause\r\n";
+    return true;
+  }
+
+  if (stmt->setOperations != nullptr) {
+    std::cout << "[LiteDB-Error]  Do not support Set Operation like 'UNION', "
+                 "'Intersect', ect.\r\n";
+    return true;
+  }
+
+  if (stmt->withDescriptions != nullptr) {
+    std::cout << "[LiteDB-Error]  Do not support 'with' clause.\r\n";
+    return true;
+  }
+
+  if (stmt->lockings != nullptr) {
+    std::cout << "[LiteDB-Error]  Do not support 'lock' clause.\r\n";
+    return true;
+  }
+
+  if (stmt->selectList != nullptr) {
+    for (auto expr : *stmt->selectList)
+      if (checkExpr(table, expr)) return true;
+  }
+
+  if (stmt->whereClause != nullptr)
+    if (checkExpr(table, stmt->whereClause)) return true;
+
+  if (stmt->order != nullptr)
+    for (auto order : *stmt->order)
+      if (checkExpr(table, order->expr)) return true;
+
+  if (stmt->limit != nullptr) {
+    if (checkExpr(table, stmt->limit->limit)) return true;
+    if (checkExpr(table, stmt->limit->offset)) return true;
+  }
+
+  return false;
+}
+
+bool Parser::checkInsertStmt(const InsertStatement* stmt) {
+  if (stmt->type == kInsertSelect)
+    std::cout
+        << "[LiteDB-Error]  Do not support 'INSERT INTO ... SELECT ...'.\r\n";
+
+  Table* table = g_meta_data.getTable(stmt->schema, stmt->tableName);
+  if (table == nullptr) {
+    std::cout << "[LiteDB-Error]  Can not find table "
+              << TableNameToString(stmt->schema, stmt->tableName) << "\r\n";
+    return true;
+  }
+
+  if (stmt->columns != nullptr)
+    for (auto col_name : *stmt->columns)
+      if (checkColumn(table, col_name)) return true;
+
+  /* 安放数据到每一列对应的位置，没有数据的列填写 NULL */
+  std::vector<Expr*> new_values;
+  for (size_t i = 0; i < table->columns()->size(); i++) {
+    auto col_def = (*table->columns())[i];
+    if (stmt->columns != nullptr) {
+      size_t j;
+      for (j = 0; j < stmt->columns->size(); j++)
+        if (strcmp(col_def->name, (*stmt->columns)[j])) break;
+
+      if (j < stmt->columns->size()) {
+        new_values.push_back((*stmt->values)[j]);
+      } else {
+        Expr* e = new Expr(kExprLiteralNull);
+        new_values.push_back(e);
+      }
+    } else {
+      if (i < stmt->values->size()) {
+        new_values.push_back((*stmt->values)[i]);
+      } else {
+        Expr* e = new Expr(kExprLiteralNull);
+        new_values.push_back(e);
+      }
+    }
+  }
+
+  stmt->values->assign(new_values.begin(), new_values.end());
+
+  if (checkValues(table->columns(), stmt->values)) return true;
+
+  return false;
+}
+
+bool Parser::checkUpdateStmt(const UpdateStatement* stmt) {
+  TableRef* table_ref = stmt->table;
+  Table* table = getTable(table_ref);
+  if (table == nullptr) {
+    std::cout << "[LiteDB-Error]  Can not find table "
+              << TableNameToString(table_ref->schema, table_ref->name)
+              << "\r\n";
+    return true;
+  }
+
+  if (stmt->updates != nullptr)
+    for (auto update : *stmt->updates) {
+      if (checkColumn(table, update->column)) return true;
+      if (checkExpr(table, update->value)) return true;
+    }
+
+  if (checkExpr(table, stmt->where)) return true;
+
+  return false;
+}
+
+bool Parser::checkDeleteStmt(const DeleteStatement* stmt) {
+  Table* table = g_meta_data.getTable(stmt->schema, stmt->tableName);
+  if (table == nullptr) {
+    std::cout << "[LiteDB-Error]  Can not find table "
+              << TableNameToString(stmt->schema, stmt->tableName) << "\r\n";
+    return true;
+  }
+
+  if (checkExpr(table, stmt->expr)) return true;
+
+  return false;
+}
+
+Table* Parser::getTable(TableRef* table_ref) {
+  if (table_ref->type != kTableName) {
+    std::cout << "[LiteDB-Error]  Only support ordinary table.\r\n";
+    return nullptr;
+  }
+
+  Table* table = g_meta_data.getTable(table_ref->schema, table_ref->name);
+  if (table == nullptr) {
+    std::cout << "[LiteDB-Error]  Table "
+              << TableNameToString(table_ref->schema, table_ref->name)
+              << " did not exist!\r\n";
+    return nullptr;
+  }
+
+  return table;
+}
+
+bool Parser::checkColumn(Table* table, char* col_name) {
+  for (auto col_def : *table->columns())
+    if (strcmp(col_name, col_def->name) == 0) return false;
+
+  std::cout << "[LiteDB-Error]  Can not find column " << col_name
+            << " in table " << TableNameToString(table->schema(), table->name())
+            << "\r\n";
+  return true;
+}
+
+bool Parser::checkExpr(Table* table, Expr* expr) {
+  switch (expr->type) {
+    case kExprLiteralFloat:
+    case kExprLiteralString:
+    case kExprLiteralInt:
+    case kExprStar:
+      break;
+
+    case kExprSelect:
+      return checkExpr(table, expr->expr);
+
+    case kExprOperator:
+      if (expr->expr != nullptr && checkExpr(table, expr->expr)) return true;
+      if (expr->expr2 != nullptr && checkExpr(table, expr->expr2)) return true;
+      break;
+
+    case kExprColumnRef:
+      if (checkColumn(table, expr->name)) return true;
+      break;
+
+    default:
+      std::cout << "[LiteDB-Error]  Unsupport opertation "
+                << ExprTypeToString(expr->type) << "\r\n";
+      return true;
+  }
+
+  return false;
+}
+
+bool Parser::checkValues(std::vector<ColumnDefinition*>* columns,
+                         std::vector<Expr*>* values) {
+  for (size_t i = 0; i < columns->size(); i++) {
+    auto col_def = (*columns)[i];
+    auto expr = (*values)[i];
+
+    switch (col_def->type.data_type) {
+      case DataType::INT:
+      case DataType::LONG:
+        if (expr->type != kExprLiteralInt) {
+          std::cout << "[LiteDB-Error]  Invalid insert value type "
+                    << ExprTypeToString(expr->type) << " for column "
+                    << col_def->name << "\r\n";
+          return true;
+        }
+        if (col_def->type.data_type == DataType::INT &&
+            expr->ival > INT32_MAX) {
+          std::cout << "[LiteDB-Error]  The value " << expr->ival
+                    << " exceed the limitation of INT32_MAX\r\n";
+          return true;
+        }
+        break;
+
+      case DataType::DOUBLE:
+        if (expr->type != kExprLiteralFloat) {
+          std::cout << "[LiteDB-Error]  Invalid insert value type "
+                    << ExprTypeToString(expr->type) << " for column "
+                    << col_def->name << "\r\n";
+          return true;
+        }
+        break;
+
+      case DataType::CHAR:
+      case DataType::VARCHAR:
+        if (expr->type != kExprLiteralString) {
+          std::cout << "[LiteDB-Error]  Invalid insert value type "
+                    << ExprTypeToString(expr->type) << " for column "
+                    << col_def->name << "\r\n";
+          return true;
+        }
+        if (strlen(expr->name) > static_cast<size_t>(col_def->type.length)) {
+          std::cout << "[LiteDB-Error]  The value '" << expr->name
+                    << "' is too long for column " << col_def->name << "\r\n";
+          return true;
+        }
+        break;
+      default:
+        return true;
+        break;
+    }
+  }
+
+  return false;
+}
+
+bool Parser::checkCreateStmt(const CreateStatement* stmt) {
+  switch (stmt->type) {
+    case kCreateTable:
+      if (checkCreateTableStmt(stmt)) return true;
+      break;
+    default:
+      std::cout << "[LiteDB-Error]  Only support 'Create Table'.\r\n";
+      return true;
+  }
+
+  return false;
+}
+
+bool Parser::checkCreateTableStmt(const CreateStatement* stmt) {
+  if (stmt->schema == nullptr || stmt->tableName == nullptr) {
+    std::cout << "[LiteDB-Error]: Schema and table name should be specified in "
+                 "the query, like 'db.t'.\r\n";
+    return true;
+  }
+
+  // 检查表是否已存在
+  if (g_meta_data.getTable(stmt->schema, stmt->tableName) != nullptr &&
+      !stmt->ifNotExists) {
+    std::cout << "[LiteDB-Error]  Table "
+              << TableNameToString(stmt->schema, stmt->tableName)
+              << " already existed!\r\n";
+    return true;
+  }
+
+  // 检查每一列是否合法
+  if (stmt->columns == nullptr || stmt->columns->size() == 0) {
+    std::cout << "[LiteDB-Error]  Valid column should be spicified in 'Create "
+                 "Table' statement.\r\n";
+    return true;
+  }
+
+  for (auto col_def : *stmt->columns) {
+    if (col_def == nullptr || col_def->name == nullptr) {
+      std::cout
+          << "[LiteDB-Error]  Valid column should be spicified in 'Create "
+             "Table' statement.\r\n";
+      return true;
+    }
+
+    if (!IsDataTypeSupport(col_def->type.data_type)) {
+      std::cout << "[LiteDB-Error]  Unsupport data type "
+                << DataTypeToString(col_def->type.data_type) << "\r\n";
+      return true;
+    }
+  }
+
+  return false;
+}
+
+bool Parser::checkCreateIndexStmt(const CreateStatement* stmt) {
+  if (g_meta_data.getIndex(stmt->schema, stmt->tableName, stmt->indexName) !=
+          nullptr &&
+      !stmt->ifNotExists) {
+    std::cout << "[LiteDB-Error]  Index " << stmt->indexName << "of "
+              << TableNameToString(stmt->schema, stmt->tableName)
+              << " already existed!\r\n";
+    return true;
+  }
+
+  // 检查 index 每一列是否存在
+  Table* table = g_meta_data.getTable(stmt->schema, stmt->tableName);
+  for (auto idx_col : *stmt->indexColumns)
+    if (checkColumn(table, idx_col)) return true;
+
+  return false;
+}
+
+bool Parser::checkDropStmt(const DropStatement* stmt) {
+  switch (stmt->type) {
+    case kDropTable: {
+      if (g_meta_data.getTable(stmt->schema, stmt->name) == nullptr &&
+          !stmt->ifExists) {
+        std::cout << "[LiteDB-Error]  Table "
+                  << TableNameToString(stmt->schema, stmt->name)
+                  << " did not exist!\r\n";
+        return true;
+      }
+      break;
+    }
+    case kDropSchema: {
+      if (!g_meta_data.findSchema(stmt->schema) && !stmt->ifExists) {
+        std::cout << "[LiteDB-Error]  Schema " << stmt->schema
+                  << " did not exist\r\n";
+        return true;
+      }
+      break;
+    }
+    case kDropIndex: {
+      if (g_meta_data.getIndex(stmt->schema, stmt->name, stmt->indexName) ==
+              nullptr &&
+          !stmt->ifExists) {
+        std::cout << "[LiteDB-Error]  Index " << stmt->indexName << " of "
+                  << TableNameToString(stmt->schema, stmt->name)
+                  << " did not exist!\r\n";
+        return true;
+      }
+      break;
+    }
+    default:
+      std::cout << "[LiteDB-Error]  Not support drop statement "
+                << DropTypeToString(stmt->type) << "\r\n";
+      return true;
+  }
+
+  return false;
+}
+
+}  // namespace litedb

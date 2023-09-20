@@ -1,0 +1,263 @@
+#include "util.h"
+
+#include <cstdint>
+#include <cstring>
+#include <iostream>
+
+namespace litedb {
+const char* StmtTypeToString(StatementType type) {
+  switch (type) {
+    case kStmtError:
+      return "ERROR";
+    case kStmtSelect:
+      return "SELECT";
+    case kStmtImport:
+      return "IMPORT";
+    case kStmtInsert:
+      return "INSERT";
+    case kStmtUpdate:
+      return "UPDATE";
+    case kStmtDelete:
+      return "DELETE";
+    case kStmtCreate:
+      return "CREATE";
+    case kStmtDrop:
+      return "DROP";
+    case kStmtPrepare:
+      return "PREPARE";
+    case kStmtExecute:
+      return "EXECUTE";
+    case kStmtExport:
+      return "EXPORT";
+    case kStmtRename:
+      return "RENAME";
+    case kStmtAlter:
+      return "ALTER";
+    case kStmtShow:
+      return "SHOW";
+    case kStmtTransaction:
+      return "TRANSACTION";
+    default:
+      return "UNKOUWN";
+  }
+}
+
+const char* DataTypeToString(DataType type) {
+  switch (type) {
+    case DataType::CHAR:
+      return "CHAR";
+    case DataType::DATE:
+      return "DATE";
+    case DataType::DATETIME:
+      return "DATETIME";
+    case DataType::DECIMAL:
+      return "DECIMAL";
+    case DataType::DOUBLE:
+      return "DOUBLE";
+    case DataType::FLOAT:
+      return "FLOAT";
+    case DataType::INT:
+      return "INT";
+    case DataType::LONG:
+      return "LONG";
+    case DataType::REAL:
+      return "REAL";
+    case DataType::SMALLINT:
+      return "SMALLINT";
+    case DataType::TEXT:
+      return "TEXT";
+    case DataType::TIME:
+      return "TIME";
+    case DataType::VARCHAR:
+      return "VARCHAR";
+    default:
+      return "UNKNOWN";
+  }
+}
+
+const char* DropTypeToString(DropType type) {
+  switch (type) {
+    case kDropTable:
+      return "DropTable";
+    case kDropSchema:
+      return "DropSchema";
+    case kDropIndex:
+      return "DropIndex";
+    case kDropView:
+      return "DropView";
+    case kDropPreparedStatement:
+      return "DropPreparedStatement";
+    default:
+      return "UNKNOWN";
+  }
+}
+
+const char* ExprTypeToString(ExprType type) {
+  switch (type) {
+    case kExprLiteralFloat:
+      return "ExprLiteralFloat";
+    case kExprLiteralString:
+      return "ExprLiteralString";
+    case kExprLiteralInt:
+      return "ExprLiteralInt";
+    case kExprLiteralNull:
+      return "ExprLiteralNull";
+    case kExprLiteralDate:
+      return "ExprLiteralDate";
+    case kExprLiteralInterval:
+      return "ExprLiteralInterval";
+    case kExprStar:
+      return "ExprStar";
+    case kExprParameter:
+      return "ExprParameter";
+    case kExprColumnRef:
+      return "ExprColumnRef";
+    case kExprFunctionRef:
+      return "ExprFunctionRef";
+    case kExprOperator:
+      return "ExprOperator";
+    case kExprSelect:
+      return "ExprSelect";
+    case kExprHint:
+      return "ExprHint";
+    case kExprArray:
+      return "ExprArray";
+    case kExprArrayIndex:
+      return "ExprArrayIndex";
+    case kExprExtract:
+      return "ExprExtract";
+    case kExprCast:
+      return "ExprCast";
+    default:
+      return "UNKNOWN";
+  }
+}
+
+const char* PlanTypeToString(PlanType type) {
+  switch (type) {
+    case kCreate:
+      return "Create";
+    case kDrop:
+      return "Drop";
+    case kInsert:
+      return "Insert";
+    case kUpdate:
+      return "Update";
+    case kDelete:
+      return "Delete";
+    case kSelect:
+      return "Select";
+    case kScan:
+      return "Scan";
+    case kProjection:
+      return "Projection";
+    case kFilter:
+      return "Filter";
+    case kSort:
+      return "Sort";
+    case kLimit:
+      return "Limit";
+    case kTrx:
+      return "Trx";
+    case kShow:
+      return "Show";
+    default:
+      return "UNKNOWN";
+  }
+}
+
+size_t ColumnTypeSize(ColumnType& type) {
+  switch (type.data_type) {
+    case DataType::INT:
+      return sizeof(int32_t);
+    case DataType::LONG:
+      return sizeof(int64_t);
+    case DataType::DOUBLE:
+      return sizeof(double);
+    case DataType::CHAR:
+      return type.length + 1;
+    case DataType::VARCHAR:
+      return type.length + 1;
+    default:
+      return -1;
+  }
+}
+
+/*
+INT32_MAX: 2,147,483,647
+INT64_MAX: 9,223,372,036,854,775,807
+额外一位的长度用来放符号，浮点数使用科学记数法，最长就是 10 位。
+*/
+#define MAX_INT32_LEN 11
+#define MAX_INT64_LEN 20
+#define MIN_DOUBLE_LEN 10
+
+void PrintTuples(std::vector<ColumnDefinition*>& columns,
+                 std::vector<size_t>& colIds,
+                 std::vector<std::vector<Expr*>>& tuples) {
+  if (tuples.size() == 0) {
+    std::cout << "Empty set\r\n";
+    return;
+  }
+
+  // 计算每一列的偏移和长度
+  size_t total_len = 0;
+  std::vector<size_t> col_lens;
+  for (auto col : columns) {
+    size_t len = col->type.length;
+    len = (strlen(col->name) > len) ? strlen(col->name) : len;
+
+    if (col->type.data_type == DataType::INT)
+      len = (MAX_INT32_LEN > len) ? MAX_INT32_LEN : len;
+    else if (col->type.data_type == DataType::LONG)
+      len = (MAX_INT64_LEN > len) ? MAX_INT64_LEN : len;
+    else if (col->type.data_type == DataType::DOUBLE)
+      len = (MIN_DOUBLE_LEN > len) ? MIN_DOUBLE_LEN : len;
+
+    len += 2;  // 列之间保留空间
+    col_lens.push_back(len);
+    total_len += len;
+  }
+
+  // 打印表头
+  for (size_t i = 0; i < columns.size(); i++) {
+    std::cout.width(col_lens[i]);
+    std::cout << columns[i]->name;
+  }
+  std::cout << "\r\n";
+
+  // 打印分隔符
+  std::cout << std::string(total_len, '-') << "\r\n";
+
+  // 打印数据
+  for (auto tup : tuples) {
+    for (size_t i = 0; i < columns.size(); i++) {
+      Expr* expr = tup[colIds[i]];
+      std::cout.width(col_lens[i]);
+      switch (expr->type) {
+        case kExprLiteralString:
+          std::cout << expr->name;
+          break;
+        case kExprLiteralInt:
+          std::cout << expr->ival;
+          break;
+        case kExprLiteralFloat:
+          std::cout.precision(col_lens[i] - 9);
+          std::cout << std::scientific << expr->fval;
+          break;
+        case kExprLiteralNull:
+          std::cout << "NULL";
+          break;
+        default:
+          break;
+      }
+    }
+    std::cout << "\r\n";
+  }
+
+  // 打印分隔符
+  std::cout << std::string(total_len, '-') << "\r\n";
+  std::cout << tuples.size() << " row\r\n";
+}
+
+}  // namespace litedb
